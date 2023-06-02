@@ -35,6 +35,14 @@ Yunzai 应用端，支持多账号，支持协议端：go-cqhttp、ComWeChat、I
 - [🐱 GitHub](https://TimeRainStarSky.GitHub.io/TRSS_Script)
 - [🇬 Gitee](https://Gitee.com/TimeRainStarSky/TRSS_Script)
 
+### Docker
+```
+#[国外]
+curl https://raw.githubusercontent.com/wiketool/Yunzai-docker/main/install.sh
+#[国内]
+curl https://gitee.com/Qieee/Yunzai-docker/raw/main/install.sh
+```
+
 ### 手动安装
 
 > 环境准备： Windows or Linux，Node.js（ [版本至少 v18 以上](http://nodejs.cn/download) ）， [Redis](https://redis.io/docs/getting-started/installation)
