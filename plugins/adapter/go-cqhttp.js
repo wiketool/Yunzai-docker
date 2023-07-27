@@ -1,7 +1,15 @@
 import { WebSocketServer } from "ws"
 import { randomUUID } from "crypto"
+import path from "node:path"
+import fs from "node:fs"
 
-export default class gocqhttpAdapter {
+Bot.adapter.push(new class gocqhttpAdapter {
+  constructor() {
+    this.id = "QQ"
+    this.name = "go-cqhttp"
+    this.path = this.name
+  }
+
   toStr(data) {
     switch (typeof data) {
       case "string":
@@ -14,6 +22,7 @@ export default class gocqhttpAdapter {
         else
           return JSON.stringify(data)
     }
+    return data
   }
 
   makeLog(msg) {
@@ -28,6 +37,11 @@ export default class gocqhttpAdapter {
     return new Promise(resolve =>
       Bot.once(echo, data =>
         resolve({ ...data, ...data.data })))
+  }
+
+  setProfile(data, profile) {
+    logger.info(`${logger.blue(`[${data.self_id}]`)} 设置资料：${JSON.stringify(profile)}`)
+    return data.sendApi("set_qq_profile", profile)
   }
 
   makeMsg(msg) {
@@ -47,6 +61,9 @@ export default class gocqhttpAdapter {
   }
 
   sendFriendMsg(data, msg) {
+    if (msg?.type == "node")
+      return this.sendFriendForwardMsg(data, msg.data)
+
     logger.info(`${logger.blue(`[${data.self_id}]`)} 发送好友消息：[${data.user_id}] ${this.makeLog(msg)}`)
     return data.sendApi("send_msg", {
       user_id: data.user_id,
@@ -55,6 +72,9 @@ export default class gocqhttpAdapter {
   }
 
   sendGroupMsg(data, msg) {
+    if (msg?.type == "node")
+      return this.sendGroupForwardMsg(data, msg.data)
+
     logger.info(`${logger.blue(`[${data.self_id}]`)} 发送群消息：[${data.group_id}] ${this.makeLog(msg)}`)
     return data.sendApi("send_msg", {
       group_id: data.group_id,
@@ -63,6 +83,9 @@ export default class gocqhttpAdapter {
   }
 
   sendGuildMsg(data, msg) {
+    if (msg?.type == "node")
+      return this.sendGuildForwardMsg(data, msg.data)
+
     logger.info(`${logger.blue(`[${data.self_id}]`)} 发送频道消息：[${data.guild_id}-${data.channel_id}] ${this.makeLog(msg)}`)
     return data.sendApi("send_guild_channel_msg", {
       guild_id: data.guild_id,
@@ -71,8 +94,17 @@ export default class gocqhttpAdapter {
     })
   }
 
-  getMsg(data, message_id) {
-    return data.sendApi("get_msg", { message_id })
+  async getMsg(data, message_id) {
+    const msg = (await data.sendApi("get_msg", { message_id })).data
+
+    if (msg?.message) {
+      const message = []
+      for (const i of msg.message)
+        message.push({ ...i.data, type: i.type })
+      msg.message = message
+    }
+
+    return msg
   }
 
   recallMsg(data, message_id) {
@@ -99,31 +131,28 @@ export default class gocqhttpAdapter {
     return messages
   }
 
-  async makeFriendForwardMsg(data, msg) {
+  async sendFriendForwardMsg(data, msg) {
     logger.info(`${logger.blue(`[${data.self_id}]`)} 发送好友转发消息：[${data.user_id}] ${this.makeLog(msg)}`)
     msg = await data.sendApi("send_private_forward_msg", {
       user_id: data.user_id,
       messages: this.makeForwardMsg(msg),
     })
-    msg.data = "好友转发消息"
     return msg
   }
 
-  async makeGroupForwardMsg(data, msg) {
+  async sendGroupForwardMsg(data, msg) {
     logger.info(`${logger.blue(`[${data.self_id}]`)} 发送群转发消息：[${data.group_id}] ${this.makeLog(msg)}`)
     msg = await data.sendApi("send_group_forward_msg", {
       group_id: data.group_id,
       messages: this.makeForwardMsg(msg),
     })
-    msg.data = "群转发消息"
     return msg
   }
 
-  async makeGuildForwardMsg(data, msg) {
+  async sendGuildForwardMsg(data, msg) {
     const messages = []
     for (const i of msg)
       messages.push(await this.sendGuildMsg(data, i.message))
-    messages.data = "频道消息"
     return messages
   }
 
@@ -133,8 +162,8 @@ export default class gocqhttpAdapter {
 
   async getFriendList(data) {
     const array = []
-    for (const i of (await this.getFriendArray(data)))
-      array.push(i.user_id)
+    for (const { user_id } of (await this.getFriendArray(data)))
+      array.push(user_id)
     return array
   }
 
@@ -169,8 +198,8 @@ export default class gocqhttpAdapter {
 
   async getGroupList(data) {
     const array = []
-    for (const i of (await this.getGroupArray(data)))
-      array.push(i.group_id)
+    for (const { group_id } of (await this.getGroupArray(data)))
+      array.push(group_id)
     return array
   }
 
@@ -187,27 +216,27 @@ export default class gocqhttpAdapter {
     })
   }
 
-  async getGroupMemberArray(data) {
+  async getMemberArray(data) {
     return (await data.sendApi("get_group_member_list", {
       group_id: data.group_id,
     })).data
   }
 
-  async getGroupMemberList(data) {
+  async getMemberList(data) {
     const array = []
-    for (const i of (await this.getGroupMemberArray(data)))
-      array.push(i.user_id)
+    for (const { user_id } of (await this.getMemberArray(data)))
+      array.push(user_id)
     return array
   }
 
-  async getGroupMemberMap(data) {
+  async getMemberMap(data) {
     const map = new Map()
-    for (const i of (await this.getGroupMemberArray(data)))
+    for (const i of (await this.getMemberArray(data)))
       map.set(i.user_id, i)
     return map
   }
 
-  getGroupMemberInfo(data) {
+  getMemberInfo(data) {
     return data.sendApi("get_group_member_info", {
       group_id: data.group_id,
       user_id: data.user_id,
@@ -259,8 +288,8 @@ export default class gocqhttpAdapter {
 
   async getGuildMemberList(data) {
     const array = []
-    for (const i of (await this.getGuildMemberArray(data)))
-      array.push(i.user_id)
+    for (const { user_id } of (await this.getGuildMemberArray(data)))
+      array.push(user_id)
     return array.push
   }
 
@@ -279,6 +308,7 @@ export default class gocqhttpAdapter {
   }
 
   setGroupName(data, group_name) {
+    logger.info(`${logger.blue(`[${data.self_id}]`)} 设置群名：[${data.group_id}] ${group_name}`)
     return data.sendApi("set_group_name", {
       group_id: data.group_id,
       group_name,
@@ -286,13 +316,15 @@ export default class gocqhttpAdapter {
   }
 
   setGroupAvatar(data, file) {
+    logger.info(`${logger.blue(`[${data.self_id}]`)} 设置群头像：[${data.group_id}] ${file}`)
     return data.sendApi("set_group_portrait", {
       group_id: data.group_id,
-      file: segment.image(file).data.file,
+      file: segment.image(file).file,
     })
   }
 
   setGroupAdmin(data, user_id, enable) {
+    logger.info(`${logger.blue(`[${data.self_id}]`)} ${enable ? "设置" : "取消"}群管理员：[${data.group_id}] ${user_id}`)
     return data.sendApi("set_group_admin", {
       group_id: data.group_id,
       user_id,
@@ -301,6 +333,7 @@ export default class gocqhttpAdapter {
   }
 
   setGroupCard(data, user_id, card) {
+    logger.info(`${logger.blue(`[${data.self_id}]`)} 设置群名片：[${data.group_id}] ${user_id} ${card}`)
     return data.sendApi("set_group_card", {
       group_id: data.group_id,
       user_id,
@@ -309,6 +342,7 @@ export default class gocqhttpAdapter {
   }
 
   setGroupTitle(data, user_id, special_title, duration) {
+    logger.info(`${logger.blue(`[${data.self_id}]`)} 设置群头衔：[${data.group_id}] ${user_id} ${special_title} ${duration}`)
     return data.sendApi("set_group_special_title", {
       group_id: data.group_id,
       user_id,
@@ -317,98 +351,229 @@ export default class gocqhttpAdapter {
     })
   }
 
+  downloadFile(data, url, thread_count, headers) {
+    return data.sendApi("download_file", {
+      url,
+      thread_count,
+      headers,
+    })
+  }
+
+  async makeFile(data, file, name = path.basename(file)) {
+    if (file.match(/^https?:\/\//))
+      file = (await this.downloadFile(data, file)).file
+    else if (fs.existsSync(file))
+      file = path.resolve(file)
+    return { file, name }
+  }
+
+  async sendFriendFile(data, file, name) {
+    logger.info(`${logger.blue(`[${data.self_id}]`)} 发送好友文件：[${data.user_id}] ${name}(${file})`)
+    return data.sendApi("upload_private_file", {
+      user_id: data.user_id,
+      ...await this.makeFile(data, file, name),
+    })
+  }
+
+  async sendGroupFile(data, file, folder, name) {
+    logger.info(`${logger.blue(`[${data.self_id}]`)} 发送群文件：[${data.group_id}] ${folder||""}/${name}(${file})`)
+    return data.sendApi("upload_group_file", {
+      group_id: data.group_id,
+      folder,
+      ...await this.makeFile(data, file, name),
+    })
+  }
+
+  deleteGroupFile(data, file_id, busid) {
+    logger.info(`${logger.blue(`[${data.self_id}]`)} 删除群文件：[${data.group_id}] ${file_id}(${busid})`)
+    return data.sendApi("delete_group_file", {
+      group_id: data.group_id,
+      file_id,
+      busid,
+    })
+  }
+
+  createGroupFileFolder(data, name) {
+    logger.info(`${logger.blue(`[${data.self_id}]`)} 创建群文件夹：[${data.group_id}] ${name}`)
+    return data.sendApi("create_group_file_folder", {
+      group_id: data.group_id,
+      name,
+    })
+  }
+
+  getGroupFileSystemInfo(data) {
+    return data.sendApi("get_group_file_system_info", {
+      group_id: data.group_id,
+    })
+  }
+
+  getGroupFiles(data, folder_id) {
+    if (folder_id)
+      return data.sendApi("get_group_files_by_folder", {
+        group_id: data.group_id,
+        folder_id,
+      })
+    return data.sendApi("get_group_root_files", {
+      group_id: data.group_id,
+    })
+  }
+
+  getGroupFileUrl(data, file_id, busid) {
+    return data.sendApi("get_group_file_url", {
+      group_id: data.group_id,
+      file_id,
+      busid,
+    })
+  }
+
+  getGroupFs(data) {
+    return {
+      upload: (file, folder, name) => this.sendGroupFile(data, file, folder, name),
+      rm: (file_id, busid) => this.deleteGroupFile(data, file_id, busid),
+      mkdir: name => this.createGroupFileFolder(data, name),
+      df: () => this.getGroupFileSystemInfo(data),
+      ls: folder_id => this.getGroupFiles(data, folder_id),
+      download: (file_id, busid) => this.getGroupFileUrl(data, file_id, busid),
+    }
+  }
+
+  pickFriend(data, user_id) {
+    const i = {
+      ...Bot[data.self_id].fl.get(user_id),
+      ...data,
+      user_id,
+    }
+    return {
+      ...i,
+      sendMsg: msg => this.sendFriendMsg(i, msg),
+      getMsg: message_id => this.getMsg(i, message_id),
+      recallMsg: message_id => this.recallMsg(i, message_id),
+      getForwardMsg: message_id => this.getForwardMsg(i, message_id),
+      makeForwardMsg: Bot.makeForwardMsg,
+      sendForwardMsg: msg => this.sendFriendForwardMsg(i, msg),
+      sendFile: (file, name) => this.sendFriendFile(i, file, name),
+      getInfo: () => this.getFriendInfo(i),
+      getAvatarUrl: () => `https://q1.qlogo.cn/g?b=qq&s=0&nk=${user_id}`,
+    }
+  }
+
+  pickMember(data, group_id, user_id) {
+    if (typeof group_id == "string" && group_id.match("-")) {
+      const guild_id = group_id.split("-")
+      const i = {
+        ...data,
+        guild_id: guild_id[0],
+        channel_id: guild_id[1],
+        user_id,
+      }
+      return {
+        ...this.pickGroup(i, group_id),
+        ...i,
+        getInfo: () => this.getGuildMemberInfo(i),
+        getAvatarUrl: async () => (await this.getGuildMemberInfo(i)).avatar_url,
+      }
+    }
+
+    const i = {
+      ...Bot[data.self_id].fl.get(user_id),
+      ...data,
+      group_id,
+      user_id,
+    }
+    return {
+      ...this.pickFriend(i, user_id),
+      ...i,
+      getInfo: () => this.getMemberInfo(i),
+      poke: () => this.sendGroupMsg(i, segment.poke(user_id)),
+    }
+  }
+
+  pickGroup(data, group_id) {
+    if (typeof group_id == "string" && group_id.match("-")) {
+      const guild_id = group_id.split("-")
+      const i = {
+        ...Bot[data.self_id].gl.get(group_id),
+        ...data,
+        guild_id: guild_id[0],
+        channel_id: guild_id[1],
+      }
+      return {
+        ...i,
+        sendMsg: msg => this.sendGuildMsg(i, msg),
+        getMsg: message_id => this.getMsg(i, message_id),
+        recallMsg: message_id => this.recallMsg(i, message_id),
+        getForwardMsg: message_id => this.getForwardMsg(i, message_id),
+        makeForwardMsg: Bot.makeForwardMsg,
+        sendForwardMsg: msg => this.sendGuildForwardMsg(i, msg),
+        getInfo: () => this.getGuildInfo(i),
+        getChannelArray: () => this.getGuildChannelArray(i),
+        getChannelList: () => this.getGuildChannelList(i),
+        getChannelMap: () => this.getGuildChannelMap(i),
+        getMemberArray: () => this.getGuildMemberArray(i),
+        getMemberList: () => this.getGuildMemberList(i),
+        getMemberMap: () => this.getGuildMemberMap(i),
+        pickMember: user_id => this.pickMember(i, group_id, user_id),
+      }
+    }
+
+    const i = {
+      ...Bot[data.self_id].gl.get(group_id),
+      ...data,
+      group_id,
+    }
+    return {
+      ...i,
+      sendMsg: msg => this.sendGroupMsg(i, msg),
+      getMsg: message_id => this.getMsg(i, message_id),
+      recallMsg: message_id => this.recallMsg(i, message_id),
+      getForwardMsg: message_id => this.getForwardMsg(i, message_id),
+      makeForwardMsg: Bot.makeForwardMsg,
+      sendForwardMsg: msg => this.sendGroupForwardMsg(i, msg),
+      sendFile: (file, name) => this.sendGroupFile(i, file, undefined, name),
+      getInfo: () => this.getGroupInfo(i),
+      getAvatarUrl: () => `https://p.qlogo.cn/gh/${group_id}/${group_id}/0`,
+      getMemberArray: () => this.getMemberArray(i),
+      getMemberList: () => this.getMemberList(i),
+      getMemberMap: () => this.getMemberMap(i),
+      pickMember: user_id => this.pickMember(i, group_id, user_id),
+      pokeMember: user_id => this.sendGroupMsg(i, segment.poke(user_id)),
+      setName: group_name => this.setGroupName(i, group_name),
+      setAvatar: file => this.setGroupAvatar(i, file),
+      setAdmin: (user_id, enable) => this.setGroupAdmin(i, user_id, enable),
+      setCard: (user_id, card) => this.setGroupCard(i, user_id, card),
+      setTitle: (user_id, special_title, duration) => this.setGroupTitle(i, user_id, special_title, duration),
+      fs: this.getGroupFs(i),
+    }
+  }
+
   async connect(data) {
     Bot[data.self_id] = {
+      adapter: this,
       sendApi: data.sendApi,
       stat: { start_time: data.time },
 
-      getMsg: message_id => this.getMsg(data, message_id),
-      recallMsg: message_id => this.recallMsg(data, message_id),
-      getForwardMsg: message_id => this.getForwardMsg(data, message_id),
+      setProfile: profile => this.setProfile(data, profile),
+      setNickname: nickname => this.setProfile(data, { nickname }),
 
-      pickFriend: user_id => {
-        const i = { ...data, user_id }
-        return {
-          sendMsg: msg => this.sendFriendMsg(i, msg),
-          recallMsg: message_id => this.recallMsg(i, message_id),
-          makeForwardMsg: msg => this.makeFriendForwardMsg(i, msg),
-          getInfo: () => this.getFriendInfo(i),
-          getAvatarUrl: () => `https://q1.qlogo.cn/g?b=qq&s=0&nk=${i.user_id}`,
-        }
-      },
+      pickUser: user_id => this.pickFriend(data, user_id),
+      pickFriend: user_id => this.pickFriend(data, user_id),
 
       getFriendArray: () => this.getFriendArray(data),
       getFriendList: () => this.getFriendList(data),
       getFriendMap: () => this.getFriendMap(data),
 
-      pickMember: (group_id, user_id) => {
-        if (typeof group_id == "string" && group_id.match("-")) {
-          group_id = group_id.split("-")
-          const i = { ...data, guild_id: group_id[0], channel_id: group_id[1], user_id }
-          return {
-            ...Bot[data.self_id].pickGroup(`${i.guild_id}-${i.channel_id}`),
-            getInfo: () => this.getGuildMemberInfo(i),
-            getAvatarUrl: async () => (await this.getGuildMemberInfo(i)).avatar_url,
-          }
-        } else {
-          const i = { ...data, group_id, user_id }
-          return {
-            ...Bot[data.self_id].pickFriend(i.user_id),
-            getInfo: () => this.getGroupMemberInfo(i),
-            poke: () => this.sendGroupMsg(i, segment.poke(i.user_id)),
-          }
-        }
-      },
-
-      pickGroup: group_id => {
-        if (typeof group_id == "string" && group_id.match("-")) {
-          group_id = group_id.split("-")
-          const i = { ...data, guild_id: group_id[0], channel_id: group_id[1] }
-          return {
-            sendMsg: msg => this.sendGuildMsg(i, msg),
-            recallMsg: message_id => this.recallMsg(i, message_id),
-            makeForwardMsg: msg => this.makeGuildForwardMsg(i, msg),
-            getInfo: () => this.getGuildInfo(i),
-            getChannelArray: () => this.getGuildChannelArray(i),
-            getChannelList: () => this.getGuildChannelList(i),
-            getChannelMap: () => this.getGuildChannelMap(i),
-            getMemberArray: () => this.getGuildMemberArray(i),
-            getMemberList: () => this.getGuildMemberList(i),
-            getMemberMap: () => this.getGuildMemberMap(i),
-            pickMember: user_id => Bot[data.self_id].pickMember(`${i.guild_id}-${i.channel_id}`, user_id),
-          }
-        }
-
-        const i = { ...data, group_id }
-        return {
-          sendMsg: msg => this.sendGroupMsg(i, msg),
-          recallMsg: message_id => this.recallMsg(i, message_id),
-          makeForwardMsg: msg => this.makeGroupForwardMsg(i, msg),
-          getInfo: () => this.getGroupInfo(i),
-          getAvatarUrl: () => `https://p.qlogo.cn/gh/${i.group_id}/${i.group_id}/0`,
-          getMemberArray: () => this.getGroupMemberArray(i),
-          getMemberList: () => this.getGroupMemberList(i),
-          getMemberMap: () => this.getGroupMemberMap(i),
-          pickMember: user_id => Bot[data.self_id].pickMember(i.group_id, user_id),
-          pokeMember: user_id => this.sendGroupMsg(i, segment.poke(user_id)),
-          setName: group_name => this.setGroupName(i, group_name),
-          setAvatar: file => this.setGroupAvatar(i, file),
-          setAdmin: (user_id, enable) => this.setGroupAdmin(i, user_id, enable),
-          setCard: (user_id, card) => this.setGroupCard(i, user_id, card),
-          setTitle: (user_id, special_title, duration) => this.setGroupTitle(i, user_id, special_title, duration),
-        }
-      },
+      pickMember: (group_id, user_id) => this.pickMember(data, group_id, user_id),
+      pickGroup: group_id => this.pickGroup(data, group_id),
 
       getGroupArray: () => this.getGroupArray(data),
       getGroupList: () => this.getGroupList(data),
       getGroupMap: () => this.getGroupMap(data),
     }
-    Bot[data.self_id].pickUser = Bot[data.self_id].pickFriend
 
     Bot[data.self_id].info = (await data.sendApi("get_login_info")).data
     Bot[data.self_id].uin = Bot[data.self_id].info.user_id
     Bot[data.self_id].nickname = Bot[data.self_id].info.nickname
-    Bot[data.self_id].avatar = Bot[data.self_id].pickFriend(data.self_id).getAvatarUrl()
+    Bot[data.self_id].avatar = `https://q1.qlogo.cn/g?b=qq&s=0&nk=${data.self_id}`
 
     Bot[data.self_id].guild_info = (await data.sendApi("get_guild_service_profile")).data
     Bot[data.self_id].tiny_id = Bot[data.self_id].guild_info.tiny_id
@@ -424,31 +589,26 @@ export default class gocqhttpAdapter {
     Bot[data.self_id].version = (await data.sendApi("get_version_info")).data
     Bot[data.self_id].version = {
       ...Bot[data.self_id].version,
-      impl: Bot[data.self_id].version.app_name,
-      version: Bot[data.self_id].version.app_version,
-      onebot_version: Bot[data.self_id].version.protocol_version,
+      id: this.id,
+      name: this.name,
     }
     Bot[data.self_id].status = Bot[data.self_id].version.protocol_name
 
-    Bot[data.self_id].fl = await this.getFriendMap(data)
-    Bot[data.self_id].gl = await this.getGroupMap(data)
+    Bot[data.self_id].fl = await Bot[data.self_id].getFriendMap()
+    Bot[data.self_id].gl = await Bot[data.self_id].getGroupMap()
 
-    if (Array.isArray(Bot.uin)) {
-      if (!Bot.uin.includes(data.self_id))
-        Bot.uin.push(data.self_id)
-    } else {
-      Bot.uin = [data.self_id]
-    }
+    if (!Bot.uin.includes(data.self_id))
+      Bot.uin.push(data.self_id)
 
-    logger.mark(`${logger.blue(`[${data.self_id}]`)} go-cqhttp 已连接`)
+    logger.mark(`${logger.blue(`[${data.self_id}]`)} ${this.name}(${this.id}) 已连接`)
     Bot.emit(`connect.${data.self_id}`, Bot[data.self_id])
-    Bot.emit(`connect`, Bot[data.self_id])
+    Bot.emit("connect", Bot[data.self_id])
   }
 
   makeMessage(data) {
     const message = []
     for (const i of data.message)
-      message.push({ type: i.type, ...i.data })
+      message.push({ ...i.data, type: i.type })
     data.message = message
 
     switch (data.message_type) {
@@ -471,7 +631,7 @@ export default class gocqhttpAdapter {
         data.friend = data.member
         break
       default:
-        logger.warn(`${logger.blue(`[${data.self_id}]`)} 未知消息：${logger.red(JSON.stringify(data))}`)
+        logger.warn(`${logger.blue(`[${data.self_id}]`)} 未知消息：${logger.magenta(JSON.stringify(data))}`)
     }
 
     if (data.sub_type)
@@ -531,7 +691,7 @@ export default class gocqhttpAdapter {
             logger.info(`${logger.blue(`[${data.self_id}]`)} 群头衔：[${data.group_id}, ${data.user_id}] ${data.title}`)
             break
           default:
-            logger.warn(`${logger.blue(`[${data.self_id}]`)} 未知通知：${logger.red(JSON.stringify(data))}`)
+            logger.warn(`${logger.blue(`[${data.self_id}]`)} 未知通知：${logger.magenta(JSON.stringify(data))}`)
         }
         break
       case "group_card":
@@ -541,7 +701,7 @@ export default class gocqhttpAdapter {
         logger.info(`${logger.blue(`[${data.self_id}]`)} 离线文件：[${data.user_id}] ${JSON.stringify(data.file)}`)
         break
       case "client_status":
-        logger.info(`${logger.blue(`[${data.self_id}]`)} 客户端：[${data.client}] ${data.online ? "上线" : "下线"}`)
+        logger.info(`${logger.blue(`[${data.self_id}]`)} 客户端${data.online ? "上线" : "下线"}：${JSON.stringify(data.client)}`)
         data.clients = (await data.sendApi("get_online_clients")).clients
         Bot[data.self_id].clients = data.clients
         break
@@ -565,8 +725,13 @@ export default class gocqhttpAdapter {
         logger.info(`${logger.blue(`[${data.self_id}]`)} 子频道创建：[${data.guild_id}-${data.channel_id}, ${data.user_id}] ${JSON.stringify(data.channel_info)}`)
         Bot[data.self_id].gl = await this.getGroupMap(data)
         break
+      case "channel_destroyed":
+        data.notice_type = "guild_channel_destroyed"
+        logger.info(`${logger.blue(`[${data.self_id}]`)} 子频道删除：[${data.guild_id}-${data.channel_id}, ${data.user_id}] ${JSON.stringify(data.channel_info)}`)
+        Bot[data.self_id].gl = await this.getGroupMap(data)
+        break
       default:
-        logger.warn(`${logger.blue(`[${data.self_id}]`)} 未知通知：${logger.red(JSON.stringify(data))}`)
+        logger.warn(`${logger.blue(`[${data.self_id}]`)} 未知通知：${logger.magenta(JSON.stringify(data))}`)
     }
 
     let notice = data.notice_type.split("_")
@@ -580,7 +745,7 @@ export default class gocqhttpAdapter {
     if (data.group_id) {
       data.group = data.bot.pickGroup(data.group_id)
       data.member = data.group.pickMember(data.user_id)
-    } else if (data.guild_id && data.channel_id){
+    } else if (data.guild_id && data.channel_id) {
       data.group_id = `${data.guild_id}-${data.channel_id}`
       data.group = data.bot.pickGroup(data.group_id)
       data.member = data.group.pickMember(data.user_id)
@@ -606,7 +771,7 @@ export default class gocqhttpAdapter {
         data.member = data.group.pickMember(data.user_id)
         break
       default:
-        logger.warn(`${logger.blue(`[${data.self_id}]`)} 未知请求：${logger.red(JSON.stringify(data))}`)
+        logger.warn(`${logger.blue(`[${data.self_id}]`)} 未知请求：${logger.magenta(JSON.stringify(data))}`)
     }
 
     if (data.sub_type)
@@ -638,7 +803,7 @@ export default class gocqhttpAdapter {
         this.connect(data)
         break
       default:
-        logger.warn(`${logger.blue(`[${data.self_id}]`)} 未知消息：${logger.red(JSON.stringify(data))}`)
+        logger.warn(`${logger.blue(`[${data.self_id}]`)} 未知消息：${logger.magenta(JSON.stringify(data))}`)
     }
   }
 
@@ -646,12 +811,17 @@ export default class gocqhttpAdapter {
     try {
       data = JSON.parse(data)
     } catch (err) {
-      return logger.error(err)
+      return logger.error(`解码数据失败：${logger.red(err)}`)
     }
 
     if (data.post_type) {
+      if (data.meta_event_type != "lifecycle" && !Bot.uin.includes(data.self_id)) {
+        logger.warn(`${logger.blue(`[${data.self_id}]`)} 找不到对应Bot，忽略消息：${logger.magenta(JSON.stringify(data))}`)
+        return false
+      }
       data.sendApi = (action, params) => this.sendApi(ws, action, params)
       data.bot = Bot[data.self_id]
+
       switch (data.post_type) {
         case "meta_event":
           this.makeMeta(data)
@@ -670,22 +840,22 @@ export default class gocqhttpAdapter {
           this.makeMessage(data)
           break
         default:
-          logger.warn(`${logger.blue(`[${data.self_id}]`)} 未知消息：${logger.red(JSON.stringify(data))}`)
+          logger.warn(`${logger.blue(`[${data.self_id}]`)} 未知消息：${logger.magenta(JSON.stringify(data))}`)
       }
     } else if (data.echo) {
       logger.debug(`请求 API 返回：${logger.cyan(JSON.stringify(data))}`)
       Bot.emit(data.echo, data)
     } else {
-      logger.warn(`${logger.blue(`[${data.self_id}]`)} 未知消息：${logger.red(JSON.stringify(data))}`)
+      logger.warn(`${logger.blue(`[${data.self_id}]`)} 未知消息：${logger.magenta(JSON.stringify(data))}`)
     }
   }
 
   load() {
-    const wss = new WebSocketServer({ noServer: true })
-    wss.on("connection", ws => {
-      ws.on("error", logger.error)
-      ws.on("message", data => this.message(data, ws))
-    })
-    return wss
+    Bot.wss[this.path] = new WebSocketServer({ noServer: true })
+    Bot.wss[this.path].on("connection", ws => ws
+      .on("error", logger.error)
+      .on("message", data => this.message(data, ws))
+    )
+    return true
   }
-}
+})

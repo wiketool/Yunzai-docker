@@ -11,7 +11,7 @@ const { exec, execSync } = require('child_process')
 let uping = false
 
 export class update extends plugin {
-  constructor () {
+  constructor() {
     super({
       name: '更新',
       dsc: '#更新 #强制更新',
@@ -27,7 +27,7 @@ export class update extends plugin {
           fnc: 'update'
         },
         {
-          reg: '^#全部更新$',
+          reg: '^#全部(强制)?更新$',
           fnc: 'updateAll',
           permission: 'master'
         }
@@ -37,7 +37,7 @@ export class update extends plugin {
     this.typeName = 'TRSS-Yunzai'
   }
 
-  async update () {
+  async update() {
     if (!this.e.isMaster) return false
     if (uping) {
       await this.reply('已有命令更新中..请勿重复操作')
@@ -64,7 +64,7 @@ export class update extends plugin {
     }
   }
 
-  async checkGit () {
+  async checkGit() {
     let ret = await execSync('git --version', { encoding: 'utf-8' })
     if (!ret || !ret.includes('git version')) {
       await this.reply('请先安装git')
@@ -74,21 +74,19 @@ export class update extends plugin {
     return true
   }
 
-  getPlugin (plugin = '') {
+  getPlugin(plugin = '') {
     if (!plugin) {
       plugin = this.e.msg.replace(/#|更新|强制/g, '')
       if (!plugin) return ''
     }
 
-    let path = `./plugins/${plugin}/.git`
-
-    if (!fs.existsSync(path)) return false
+    if (!fs.existsSync(`plugins/${plugin}/.git`)) return false
 
     this.typeName = plugin
     return plugin
   }
 
-  async execSync (cmd) {
+  async execSync(cmd) {
     return new Promise((resolve, reject) => {
       exec(cmd, { windowsHide: true }, (error, stdout, stderr) => {
         resolve({ error, stdout, stderr })
@@ -96,7 +94,7 @@ export class update extends plugin {
     })
   }
 
-  async runUpdate (plugin = '') {
+  async runUpdate(plugin = '') {
     this.isNowUp = false
 
     let cm = 'git pull --no-rebase'
@@ -104,12 +102,12 @@ export class update extends plugin {
     let type = '更新'
     if (this.e.msg.includes('强制')) {
       type = '强制更新'
-      cm = `git fetch --all && git reset --hard && ${cm}`
+      cm = `git reset --hard && git pull --rebase --allow-unrelated-histories`
     }
 
-    if (plugin) {
-      cm = `git -C ./plugins/${plugin}/ pull --no-rebase`
-    }
+    if (plugin)
+      cm = `cd "plugins/${plugin}" && ${cm}`
+
 
     this.oldCommitId = await this.getcommitId(plugin)
 
@@ -142,10 +140,10 @@ export class update extends plugin {
     return true
   }
 
-  async getcommitId (plugin = '') {
+  async getcommitId(plugin = '') {
     let cm = 'git rev-parse --short HEAD'
     if (plugin) {
-      cm = `git -C ./plugins/${plugin}/ rev-parse --short HEAD`
+      cm = `cd "plugins/${plugin}" && git rev-parse --short HEAD`
     }
 
     let commitId = await execSync(cm, { encoding: 'utf-8' })
@@ -154,10 +152,10 @@ export class update extends plugin {
     return commitId
   }
 
-  async getTime (plugin = '') {
-    let cm = 'git log  -1 --oneline --pretty=format:"%cd" --date=format:"%m-%d %H:%M"'
+  async getTime(plugin = '') {
+    let cm = 'git log -1 --pretty=format:"%cd" --date=format:"%F %T"'
     if (plugin) {
-      cm = `cd ./plugins/${plugin}/ && git log -1 --oneline --pretty=format:"%cd" --date=format:"%m-%d %H:%M"`
+      cm = `cd "plugins/${plugin}" && git log -1 --pretty=format:"%cd" --date=format:"%F %T"`
     }
 
     let time = ''
@@ -172,7 +170,7 @@ export class update extends plugin {
     return time
   }
 
-  async gitErr (err, stdout) {
+  async gitErr(err, stdout) {
     let msg = '更新失败！'
     let errMsg = err.toString()
     stdout = stdout.toString()
@@ -202,7 +200,7 @@ export class update extends plugin {
     await this.reply([errMsg, stdout])
   }
 
-  async updateAll () {
+  async updateAll() {
     let dirs = fs.readdirSync('./plugins/')
 
     await this.runUpdate()
@@ -220,14 +218,14 @@ export class update extends plugin {
     }
   }
 
-  restart () {
+  restart() {
     new Restart(this.e).restart()
   }
 
-  async getLog (plugin = '') {
-    let cm = 'git log  -20 --oneline --pretty=format:"%h||[%cd]  %s" --date=format:"%m-%d %H:%M"'
+  async getLog(plugin = '') {
+    let cm = 'git log -20 --pretty=format:"%h||[%cd] %s" --date=format:"%F %T"'
     if (plugin) {
-      cm = `cd ./plugins/${plugin}/ && ${cm}`
+      cm = `cd "plugins/${plugin}" && ${cm}`
     }
 
     let logAll
@@ -256,33 +254,12 @@ export class update extends plugin {
 
     let end = ''
 
-    log = await this.makeForwardMsg(`${plugin || 'TRSS-Yunzai'}更新日志，共${line}条`, log, end)
+    log = await common.makeForwardMsg(this.e, [log, end], `${plugin || 'TRSS-Yunzai'}更新日志，共${line}条`)
 
     return log
   }
 
-  async makeForwardMsg (title, msg, end) {
-    let forwardMsg = [{ message: title }, { message: msg }]
-
-    if (end)
-      forwardMsg.push({ message: end })
-
-    /** 制作转发内容 */
-    if (this.e.group)
-      forwardMsg = await this.e.group.makeForwardMsg(forwardMsg)
-    else
-      forwardMsg = await this.e.friend.makeForwardMsg(forwardMsg)
-
-    /** 处理描述 */
-    forwardMsg.data = forwardMsg.data
-      .replace(/\n/g, '')
-      .replace(/<title color="#777777" size="26">(.+?)<\/title>/g, '___')
-      .replace(/___+/, `<title color="#777777" size="26">${title}</title>`)
-
-    return forwardMsg
-  }
-
-  async updateLog () {
+  async updateLog() {
     let log = await this.getLog()
     await this.reply(log)
   }
